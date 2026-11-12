@@ -1,0 +1,94 @@
+/* ------------------------------------------------------------------ *
+ * Tailwind entry.
+ *
+ * Only the theme and the utilities are pulled in — Preflight is left
+ * out on purpose, because it would reset the legacy application's
+ * typography and form controls. The legacy stylesheet sits in the
+ * `base` layer (see styles.css), so the utilities here always win on
+ * specificity without touching the light-themed RDANA screens.
+ * ------------------------------------------------------------------ */
+
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+
+  /* The Municipality of Tagbina brand: orange + navy + white shades.
+     These mirror the CSS custom properties in styles.css so the
+     dashboard and the rest of the app read as one product. */
+  --color-brand-50: #fff7ed;
+  --color-brand-100: #ffedd5;
+  --color-brand-200: #fed7aa;
+  --color-brand-300: #fdba74;
+  --color-brand-500: #f97316;
+  --color-brand-600: #ea580c;
+  --color-brand-700: #c2410c;
+
+  --color-navy-100: #dbe7f5;
+  --color-navy-500: #3b6cb0;
+  --color-navy-700: #1b3470;
+  --color-navy-900: #0a1f44;
+}
+
+@layer base {
+  /* Preflight is intentionally left out, so bare <button> elements keep
+     the browser's grey button face. Reset them inside the dark shell
+     only — the legacy light app is untouched. */
+  [data-shell='ardana'] button {
+    background-color: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  /* The impact dashboard draws every button itself (pill tabs, agency
+     cells, icon buttons), so the browser's outset border and grey face
+     would show through. Utilities still win: a class that sets a
+     background or a border overrides this reset. */
+  [data-impact] button {
+    background-color: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  [data-shell='ardana'] select {
+    background-image: none;
+  }
+
+  /* Preflight is also why headings and lists still carry the browser's
+     default margins (an <h1> alone pushes the page down by ~20px).
+     Tailwind-rendered pages opt in with data-tailwind. */
+  [data-tailwind] :where(h1, h2, h3, h4, h5, h6, p, figure, blockquote) {
+    margin: 0;
+  }
+
+  [data-tailwind] :where(ul, ol) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Chrome/Edge autofill paints its own light background and dark text,
+     which hides the white text and the leading/trailing icons on the
+     dark login card. Keep the field translucent and the text white. */
+  .login-input:-webkit-autofill,
+  .login-input:-webkit-autofill:hover,
+  .login-input:-webkit-autofill:focus,
+  .login-input:-webkit-autofill:active {
+    -webkit-text-fill-color: #fff;
+    -webkit-box-shadow: 0 0 0 1000px #142a52 inset;
+    box-shadow: 0 0 0 1000px #142a52 inset;
+    caret-color: #fff;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  .login-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+  }
+}

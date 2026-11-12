@@ -56,6 +56,37 @@ export const METRICS = [
   { key: 'missing', label: 'Missing' }
 ];
 
+/* The 25 barangays of the Municipality of Tagbina, Surigao del Sur.
+   Mirrors public/data/locations.json (PSGC list) so the dashboard can
+   plot every area even before any assessment has reported on it. */
+export const TAGBINA_BARANGAYS = [
+  'Batunan',
+  'Carpenito',
+  'Doña Carmen',
+  'Hinagdanan',
+  'Kahayagan',
+  'Lago',
+  'Maglambing',
+  'Maglatab',
+  'Magsaysay',
+  'Malixi',
+  'Manambia',
+  'Osmeña',
+  'Poblacion',
+  'Quezon',
+  'San Vicente',
+  'Santa Cruz',
+  'Santa Fe',
+  'Santa Juana',
+  'Santa Maria',
+  'Sayon',
+  'Soriano',
+  'Tagongon',
+  'Trinidad',
+  'Ugoban',
+  'Villaverde'
+];
+
 export const CLUSTERS = [
   { key: 'logistics', label: 'Logistics and Emergency Telecommunications' },
   { key: 'foodNfi', label: 'Food and Non-Food Items' },

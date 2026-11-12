@@ -7,7 +7,20 @@ export function uid() {
 }
 
 export function blankMetric() {
-  return { total: '', men: '', women: '', children: '', elderly: '', pwds: '' };
+  // totalManual: false = Total is computed from the five disaggregation columns.
+  // Once the assessor unlocks the cell, it is set true and the sum is left alone.
+  return { total: '', totalManual: false, men: '', women: '', children: '', elderly: '', pwds: '' };
+}
+
+export function partSum(metric = {}) {
+  return ['men', 'women', 'children', 'elderly', 'pwds'].reduce(
+    (a, k) => a + (Number(metric[k]) || 0),
+    0
+  );
+}
+
+export function hasParts(metric = {}) {
+  return ['men', 'women', 'children', 'elderly', 'pwds'].some((k) => metric[k] !== '' && metric[k] != null);
 }
 
 export function blankLifeline(key, label) {
@@ -26,9 +39,78 @@ export function defaultNeeds() {
   return CLUSTERS.map((c) => blankNeeds(c.key, c.label));
 }
 
+/* ------------------------------------------------------------------ *
+ * Damage register — the digital supplement to Form 1.
+ *
+ * `structures` is one row per damaged structure group (how many units,
+ * what material, how bad, what it costs). `barangays` is the
+ * roll-up per barangay that drives severity and prioritisation.
+ * ------------------------------------------------------------------ */
+
+export function blankStructure() {
+  return {
+    id: uid(),
+    barangay: '',
+    purok: '',
+    buildingType: '',
+    buildingName: '',
+    structureType: '',
+    damageLevel: '',
+    units: '',
+    estimatedCost: '',
+    remarks: ''
+  };
+}
+
+export function blankBarangayProfile() {
+  return {
+    id: uid(),
+    barangay: '',
+    purok: '',
+    totalHouses: '',
+    damagedHouses: '',
+    totallyDamaged: '',
+    partiallyDamaged: '',
+    affectedFamilies: '',
+    estimatedCost: '',
+    remarks: ''
+  };
+}
+
+export function blankDamage() {
+  return {
+    structures: [blankStructure()],
+    barangays: [blankBarangayProfile()],
+    notes: ''
+  };
+}
+
+/**
+ * Records saved before the damage register existed have no `damage`
+ * block. Adding the blank shape here keeps every reader (editor,
+ * report, dashboard) from having to null-check its way through.
+ */
+export function ensureDamage(inc = {}) {
+  if (inc.damage && typeof inc.damage === 'object') {
+    const d = inc.damage;
+    return {
+      ...inc,
+      damage: {
+        structures: Array.isArray(d.structures) ? d.structures : [],
+        barangays: Array.isArray(d.barangays) ? d.barangays : [],
+        notes: d.notes || ''
+      }
+    };
+  }
+  return { ...inc, damage: blankDamage() };
+}
+
 export function createIncident() {
   return {
     id: uid(),
+    formType: 'phase1',
+    // Deferred seam: linking a Phase 2 record to its Phase 1 incident. Not wired yet.
+    caseId: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -44,7 +126,8 @@ export function createIncident() {
       interviewees: [{ id: uid(), name: '' }],
       gpsLat: '',
       gpsLng: '',
-      disasterType: '',
+      gpsAccuracy: '',
+      disasterTypes: [],
       occurrenceTime: '',
       summary: ''
     },
@@ -59,6 +142,7 @@ export function createIncident() {
     lifelines: defaultLifelines(),
     issues: [{ id: uid(), healthIssue: '', nonHealthIssue: '' }],
     responseActions: [{ id: uid(), groupInvolved: '', assetsDeployed: '', assistanceExtent: '', familiesServed: '' }],
-    needs: defaultNeeds()
+    needs: defaultNeeds(),
+    damage: blankDamage()
   };
 }

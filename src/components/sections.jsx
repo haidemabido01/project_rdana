@@ -1,9 +1,38 @@
-import { DISASTER_TYPES, LIFELINE_STATUSES, DISAGG_COLUMNS, METRICS } from '../lib/constants';
+import { DISASTER_TYPES, LIFELINE_STATUSES, DISAGG_COLUMNS, METRICS, TAGBINA_BARANGAYS } from '../lib/constants';
+import {
+  BUILDING_TYPES,
+  DAMAGE_LEVEL_KEYS,
+  PRIORITY_COLORS,
+  SEVERITY_COLORS,
+  STRUCTURE_TYPES,
+  formatPct,
+  formatPeso,
+  profileMetrics,
+  registerTotals
+} from '../lib/damage';
 import { composeSitePlace } from '../lib/format';
 import { uid } from '../lib/model';
-import { Field, NumberInput, Select, TextArea, TextInput } from './ui';
+import {
+  Field,
+  MilitaryDateTimeInput,
+  NumberInput,
+  RepeatTable,
+  Select,
+  TextArea,
+  TextInput
+} from './ui';
 
-export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locationRegions }) {
+export function ProfileSection({
+  profile,
+  onChange,
+  onNow,
+  onGps,
+  gpsBusy,
+  gpsError,
+  gpsAccuracy,
+  gpsWeak,
+  locationRegions
+}) {
   const set = (field) => (e) => onChange(field, e.target.value);
   const interviewees = profile.interviewees || [];
 
@@ -30,6 +59,10 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
   };
 
   const composed = composeSitePlace(profile);
+
+  const sameTeamTimes =
+    Boolean(profile.timeArrival) && profile.timeArrival === profile.timeDeparture;
+  const sameTeamTimesError = 'Arrival and departure cannot be at the same time.';
 
   const updatePerson = (i, val) =>
     onChange('interviewees', interviewees.map((x, j) => (j === i ? { ...x, name: val } : x)));
@@ -123,21 +156,25 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
             placeholder="e.g. Near Tagbina Public Market, national road…"
           />
         </Field>
-        <Field label="Type of Disaster" required>
-          <Select value={profile.disasterType || ''} onChange={set('disasterType')}>
+        <Field label="Type of Disaster" required hint="Select the hazard type for this incident.">
+          <Select
+            value={(profile.disasterTypes || [])[0] || ''}
+            onChange={(e) => onChange('disasterTypes', e.target.value ? [e.target.value] : [])}
+          >
             <option value="">Select disaster type…</option>
-            {DISASTER_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {DISASTER_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
               </option>
             ))}
           </Select>
         </Field>
-        <Field label="Date and Time of Occurrence" required hint="When the disaster happened">
-          <input type="datetime-local" value={profile.occurrenceTime || ''} onChange={set('occurrenceTime')} />
+        <Field label="Date and Time of Occurrence" required hint="When the disaster happened · 24-hour clock">
+          <MilitaryDateTimeInput value={profile.occurrenceTime || ''} onChange={(v) => onChange('occurrenceTime', v)} />
         </Field>
         <Field
           label="Time of RDANA Team Arrival"
+          error={sameTeamTimes ? sameTeamTimesError : undefined}
           hint={
             <span>
               Team arrival
@@ -147,10 +184,11 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
             </span>
           }
         >
-          <input type="datetime-local" value={profile.timeArrival || ''} onChange={set('timeArrival')} />
+          <MilitaryDateTimeInput value={profile.timeArrival || ''} onChange={(v) => onChange('timeArrival', v)} />
         </Field>
         <Field
           label="Time of RDANA Team Departure"
+          error={sameTeamTimes ? sameTeamTimesError : undefined}
           hint={
             <span>
               Team departure
@@ -160,16 +198,17 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
             </span>
           }
         >
-          <input type="datetime-local" value={profile.timeDeparture || ''} onChange={set('timeDeparture')} />
+          <MilitaryDateTimeInput value={profile.timeDeparture || ''} onChange={(v) => onChange('timeDeparture', v)} />
         </Field>
       </div>
 
       <Field
         label="GPS Coordinates"
+        error={gpsError}
         hint={
           profile.gpsLat && profile.gpsLng
-            ? `${profile.gpsLat}, ${profile.gpsLng}`
-            : 'Tap "Get GPS" to capture from the device, or enter manually.'
+            ? `${profile.gpsLat}, ${profile.gpsLng}${gpsAccuracy != null ? ` · ±${gpsAccuracy} m` : ''}`
+            : 'Tap "Get GPS" while standing at the site being assessed, or enter manually.'
         }
       >
         <div className="row">
@@ -177,18 +216,28 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
             value={profile.gpsLat || ''}
             onChange={set('gpsLat')}
             placeholder="Latitude"
+            min={-90}
+            max={90}
             style={{ flex: 1, minWidth: 120 }}
           />
           <NumberInput
             value={profile.gpsLng || ''}
             onChange={set('gpsLng')}
             placeholder="Longitude"
+            min={-180}
+            max={180}
             style={{ flex: 1, minWidth: 120 }}
           />
           <button type="button" className="btn btn-outline btn-sm" onClick={onGps} disabled={gpsBusy}>
             {gpsBusy ? 'Locating…' : 'Get GPS'}
           </button>
         </div>
+        {gpsWeak && (
+          <p className="gps-weak">
+            Weak fix — this pin is only accurate to about ±{gpsAccuracy} m. Stand in the open, away from
+            trees and buildings, and tap Get GPS again if you need an exact location.
+          </p>
+        )}
       </Field>
 
       <Field label="Local Authorities / Persons Interviewed">
@@ -232,11 +281,12 @@ export function ProfileSection({ profile, onChange, onNow, onGps, gpsBusy, locat
   );
 }
 
-export function EffectsSection({ effects, onChange }) {
+export function EffectsSection({ effects, onChange, onSetTotalMode }) {
   const cell = (m, c) => effects[m.key][c.key] ?? '';
   const partSum = (m) =>
     DISAGG_COLUMNS.slice(1).reduce((a, c) => a + (Number(effects[m.key][c.key]) || 0), 0);
-  const total = (m) => {
+  const hasParts = (m) => DISAGG_COLUMNS.slice(1).some((c) => cell(m, c) !== '');
+  const totalNum = (m) => {
     const v = Number(effects[m.key].total);
     return effects[m.key].total === '' || !Number.isFinite(v) ? null : v;
   };
@@ -255,19 +305,54 @@ export function EffectsSection({ effects, onChange }) {
           </thead>
           <tbody>
             {METRICS.map((m) => {
-              const t = total(m);
+              const row = effects[m.key];
+              const manual = !!row.totalManual;
               const s = partSum(m);
-              const mismatch = t !== null && s !== t;
+              const t = totalNum(m);
+              const mismatch = manual && t !== null && s !== t;
+              const autoValue = hasParts(m) ? String(s) : '';
               return (
                 <tr key={m.key}>
                   <th>{m.label}</th>
                   {DISAGG_COLUMNS.map((c) => (
                     <td key={c.key}>
-                      <NumberInput
-                        className={c.key === 'total' && mismatch ? 'is-mismatch' : ''}
-                        value={cell(m, c)}
-                        onChange={(e) => onChange(m.key, c.key, e.target.value)}
-                      />
+                      {c.key === 'total' ? (
+                        manual ? (
+                          <div className="pct">
+                            <NumberInput
+                              className={mismatch ? 'is-mismatch' : ''}
+                              value={cell(m, c)}
+                              onChange={(e) => onChange(m.key, c.key, e.target.value)}
+                            />
+                            <span className={`pct-sum ${mismatch ? 'pct-sum-bad' : ''}`}>Σ {s}</span>
+                            <button
+                              type="button"
+                              className="linkbtn"
+                              title="Total back on automatic"
+                              onClick={() => onSetTotalMode(m.key, false)}
+                            >
+                              auto
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="pct">
+                            <TextInput readOnly className="is-auto" value={autoValue} placeholder="0" />
+                            <button
+                              type="button"
+                              className="linkbtn"
+                              title="Type the total yourself"
+                              onClick={() => onSetTotalMode(m.key, true)}
+                            >
+                              manual
+                            </button>
+                          </div>
+                        )
+                      ) : (
+                        <NumberInput
+                          value={cell(m, c)}
+                          onChange={(e) => onChange(m.key, c.key, e.target.value)}
+                        />
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -277,7 +362,10 @@ export function EffectsSection({ effects, onChange }) {
         </table>
       </div>
       <p className="sum-note">
-        The sum of Men + Women + Children + Elderly + PWDs is compared to the Total; mismatched rows are highlighted.
+        <b>Total is automatic</b> — it is always the sum of Men + Women + Children + Elderly + PWDs. Tap{' '}
+        <span className="linkbtn">manual</span> on any row to type the total yourself; tap{' '}
+        <span className="linkbtn">auto</span> to put it back on automatic. While a row is manual, a mismatch
+        against the sum is flagged.
       </p>
     </div>
   );
@@ -299,14 +387,19 @@ export function LifelinesSection({ lifelines, onChange, onAdd, onRemove }) {
             ) : (
               <b className="grow">{ll.label}</b>
             )}
-            <Select value={ll.status || ''} onChange={(e) => onChange(i, 'status', e.target.value)}>
-              <option value="">Status…</option>
+            <div className="checks">
               {LIFELINE_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <label key={s} className="check">
+                  <input
+                    type="radio"
+                    name={`lifeline-status-${ll.id || i}`}
+                    checked={ll.status === s}
+                    onChange={() => onChange(i, 'status', s)}
+                  />
+                  <span>{s}</span>
+                </label>
               ))}
-            </Select>
+            </div>
             <button type="button" title="Remove row" className="btn btn-ghost btn-sm" onClick={() => onRemove(i)}>
               ✕
             </button>
@@ -423,6 +516,297 @@ export function NeedsSection({ needs, onChange }) {
           </Field>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * VII. Damage register — houses and buildings
+ * ------------------------------------------------------------------ */
+
+const BARANGAY_OPTIONS = ['', ...TAGBINA_BARANGAYS];
+
+function barangayOptions(current) {
+  const value = String(current || '').trim();
+  if (value && !TAGBINA_BARANGAYS.includes(value)) {
+    return ['', value, ...TAGBINA_BARANGAYS];
+  }
+  return BARANGAY_OPTIONS;
+}
+
+const DAMAGE_COLUMNS = [
+  { key: 'barangay', label: 'Barangay', type: 'select', options: BARANGAY_OPTIONS, placeholder: 'Select barangay.' },
+  { key: 'purok', label: 'Purok / Sitio', type: 'text', placeholder: 'e.g. Purok 3' },
+  { key: 'buildingType', label: 'Type of Building / Facility', type: 'radio', options: BUILDING_TYPES },
+  {
+    key: 'buildingName',
+    label: 'Building / Structure Name',
+    type: 'text',
+    placeholder: 'e.g. Barangay Principal Office'
+  },
+  { key: 'structureType', label: 'Type of Structure', type: 'radio', options: STRUCTURE_TYPES },
+  { key: 'damageLevel', label: 'Damage Level / Status', type: 'radio', options: DAMAGE_LEVEL_KEYS },
+  { key: 'units', label: 'No. of Units Damaged', type: 'num' },
+  { key: 'estimatedCost', label: 'Estimated Damage Cost (₱)', type: 'num' },
+  { key: 'remarks', label: 'Remarks / Description of Damage', type: 'area', full: true }
+];
+
+export function DamageRegisterSection({ damage, onChange, onAdd, onRemove, onChangeNotes }) {
+  const rows = damage?.structures || [];
+  const totals = registerTotals(rows);
+  const filled = rows.filter((r) =>
+    [r.buildingType, r.buildingName, r.structureType, r.damageLevel, r.units, r.estimatedCost].some(
+      (v) => v !== '' && v != null
+    )
+  );
+
+  return (
+    <div>
+      <div className="mini-stats">
+        <div className="mini-stat">
+          <span className="mini-stat-v">{totals.units.toLocaleString()}</span>
+          <span className="mini-stat-l">Units assessed</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{totals.damagedUnits.toLocaleString()}</span>
+          <span className="mini-stat-l">Units damaged</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{formatPct(totals.damagedPct, 0)}</span>
+          <span className="mini-stat-l">% of units damaged</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{formatPct(totals.damageIndex, 0)}</span>
+          <span className="mini-stat-l">Damage index</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{formatPeso(totals.cost)}</span>
+          <span className="mini-stat-l">Estimated damage cost</span>
+        </div>
+      </div>
+
+      <p className="sum-note">
+        One row per damaged group of structures — e.g. “12 concrete residential houses, Moderate damage,
+        Purok 3”. The damage index is the weighted loss across every unit listed.
+      </p>
+
+      <RepeatTable
+        rows={rows}
+        columns={DAMAGE_COLUMNS}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        addLabel="+ Add damaged structure row"
+        cols={2}
+        minRows={1}
+      />
+
+      <Field label="Overall Damage Remarks / Key Notes" hint="Free text for anything the table cannot hold.">
+        <TextArea
+          value={damage?.notes || ''}
+          onChange={(e) => onChangeNotes(e.target.value)}
+          placeholder="General description of the damage, access constraints, unusual patterns…"
+          rows={3}
+        />
+      </Field>
+
+      {filled.length > 0 && (
+        <p className="sum-note">
+          {filled.length} row{filled.length === 1 ? '' : 's'} with damage data. The Dashboard rolls these up
+          per barangay, per structure type and per damage level.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * VIII. Barangay damage profile and priority
+ * ------------------------------------------------------------------ */
+
+function CategoryPill({ value, color, className = 'cat-pill' }) {
+  if (!value) return <span className="muted">—</span>;
+  return (
+    <span className={`${className}`} style={{ background: color, borderColor: color }}>
+      {value}
+    </span>
+  );
+}
+
+export function BarangayProfileSection({ damage, onChange, onAdd, onRemove }) {
+  const rows = damage?.barangays || [];
+  const profiles = rows.map((r) => ({ row: r, m: profileMetrics(r) }));
+  const totals = profiles.reduce(
+    (acc, p) => ({
+      total: acc.total + p.m.total,
+      damaged: acc.damaged + p.m.damaged,
+      totalLoss: acc.totalLoss + p.m.totalLoss,
+      cost: acc.cost + p.m.cost,
+      families: acc.families + (Number(p.row.affectedFamilies) || 0)
+    }),
+    { total: 0, damaged: 0, totalLoss: 0, cost: 0, families: 0 }
+  );
+  const overallPct = totals.total > 0 ? (totals.damaged / totals.total) * 100 : 0;
+
+  return (
+    <div>
+      <div className="mini-stats">
+        <div className="mini-stat">
+          <span className="mini-stat-v">{rows.length}</span>
+          <span className="mini-stat-l">Barangays profiled</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{totals.total.toLocaleString()}</span>
+          <span className="mini-stat-l">Total houses</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{totals.damaged.toLocaleString()}</span>
+          <span className="mini-stat-l">Houses damaged</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{formatPct(overallPct, 0)}</span>
+          <span className="mini-stat-l">Overall damage %</span>
+        </div>
+        <div className="mini-stat">
+          <span className="mini-stat-v">{formatPeso(totals.cost)}</span>
+          <span className="mini-stat-l">Estimated damage cost</span>
+        </div>
+      </div>
+
+      <p className="sum-note">
+        Damage % is damaged houses ÷ total houses. The category is set automatically:{' '}
+        <b>Low</b> under 10%, <b>Moderate</b> 10–30%, <b>High</b> above 30%. Priority is the tier used to
+        rank the Dashboard — a barangay moves up when much of the damage is total loss or the repair bill
+        is large.
+      </p>
+
+      <div className="table-wrap">
+        <table className="grid dmg-profile">
+          <thead>
+            <tr>
+              <th>Barangay</th>
+              <th>Purok</th>
+              <th>Total Houses</th>
+              <th>Damaged</th>
+              <th>Totally Damaged</th>
+              <th>Partially Damaged</th>
+              <th>Affected Families</th>
+              <th>Est. Cost (₱)</th>
+              <th>Damage %</th>
+              <th>Category</th>
+              <th>Priority</th>
+              <th aria-label="Remove" />
+            </tr>
+          </thead>
+          <tbody>
+            {profiles.map(({ row, m }) => (
+              <tr key={row.id} className="dmg-row">
+                <td>
+                  <Select
+                    value={row.barangay || ''}
+                    onChange={(e) => onChange(row.id, 'barangay', e.target.value)}
+                  >
+                    {barangayOptions(row.barangay).map((b) => (
+                      <option key={b || 'blank'} value={b}>
+                        {b || 'Select barangay.'}
+                      </option>
+                    ))}
+                  </Select>
+                </td>
+                <td>
+                  <TextInput
+                    value={row.purok || ''}
+                    onChange={(e) => onChange(row.id, 'purok', e.target.value)}
+                    placeholder="Purok"
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.totalHouses ?? ''}
+                    onChange={(e) => onChange(row.id, 'totalHouses', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.damagedHouses ?? ''}
+                    onChange={(e) => onChange(row.id, 'damagedHouses', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.totallyDamaged ?? ''}
+                    onChange={(e) => onChange(row.id, 'totallyDamaged', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.partiallyDamaged ?? ''}
+                    onChange={(e) => onChange(row.id, 'partiallyDamaged', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.affectedFamilies ?? ''}
+                    onChange={(e) => onChange(row.id, 'affectedFamilies', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <NumberInput
+                    value={row.estimatedCost ?? ''}
+                    onChange={(e) => onChange(row.id, 'estimatedCost', e.target.value)}
+                  />
+                </td>
+                <td className="dmg-num">{formatPct(m.damagePct, 0)}</td>
+                <td>
+                  <CategoryPill value={m.severity} color={SEVERITY_COLORS[m.severity]} />
+                </td>
+                <td>
+                  <CategoryPill value={m.priority} color={PRIORITY_COLORS[m.priority]} />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    title="Remove barangay"
+                    className="btn btn-ghost btn-sm remove"
+                    onClick={() => onRemove(row.id)}
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {profiles.length === 0 && (
+              <tr>
+                <td colSpan={12} className="muted" style={{ textAlign: 'center', padding: 16 }}>
+                  No barangay profiles yet — add one below.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {profiles.length > 0 && (
+        <div className="repeat" style={{ marginTop: 10 }}>
+          {profiles.map(({ row }) => (
+            <div key={`${row.id}-notes`} className="cell">
+              <span className="cell-lbl">Remarks — {row.barangay || 'barangay'}</span>
+              <TextArea
+                rows={2}
+                value={row.remarks || ''}
+                onChange={(e) => onChange(row.id, 'remarks', e.target.value)}
+                placeholder="Access constraints, repair priority, occupants displaced…"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="row" style={{ marginTop: 10 }}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={onAdd}>
+          + Add barangay profile
+        </button>
+      </div>
     </div>
   );
 }

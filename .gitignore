@@ -3,3 +3,7 @@ dist/
 dev-dist/
 .DS_Store
 *.log
+_audit-dist/
+_audit.jsx
+_browser*.mjs
+_*.err

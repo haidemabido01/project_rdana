@@ -1,17 +1,28 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
+  },
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon-192.png', 'icons/icon-512.png'],
       manifest: {
-        name: 'RDANA Form 1 - Rapid Damage Assessment',
-        short_name: 'RDANA Form 1',
-        description: 'Offline-first digital RDANA Form 1 assessment for disaster response.',
+        name: 'RDANA - Rapid Damage Assessment and Needs Analysis',
+        short_name: 'RDANA',
+        description:
+          'Offline-first digital RDANA Forms 1 and 2 for disaster response (Phase 1 and Phase 2 assessment).',
         theme_color: '#EA580C',
         background_color: '#FFFFFF',
         display: 'standalone',
